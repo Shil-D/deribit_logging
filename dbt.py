@@ -18,9 +18,40 @@ import json
 import logging
 from typing import Dict
 from datetime import datetime, timedelta
+import msgpack
+import gzip
+from pathlib import Path
+import numpy as np
 
 # installed
 import websockets
+
+contract = 'ETH_USDC-PERPETUAL'
+channels = [f'trades.{contract}.raw', f'book.{contract}.raw']
+write_freq = 'h'
+
+
+class pklLogger:
+    def __init__(self, outputpath, write_freq, buff_size = 10000):
+        self.out_path = outputpath
+        self.buffer = []
+        self.prev_ts = None
+        self.write_freq = write_freq
+        self.buff_size = buff_size
+
+    def info(self, data):
+        tsfield = data[0]['timestamp'] if type(data) == list else data['timestamp']
+        curts = np.datetime64(tsfield, 'ms')
+        if not self.prev_ts:
+            self.prev_ts = curts
+        if (self.prev_ts.astype(f'M8[{self.write_freq}]') != curts.astype(f'M8[{self.write_freq}]')) \
+        or (len(self.buffer) > self.buff_size):
+            with gzip.open(Path(self.out_path) /str(self.prev_ts.astype(f'M8[{self.write_freq}]')).replace(':','.'), 'ab') as file:
+                msgpack.dump(self.buffer, file)
+            self.buffer = []
+        self.prev_ts = curts
+        self.buffer.append(data)
+        # print(len(self.buffer))
 
 
 class main:
@@ -28,7 +59,8 @@ class main:
         self,
         ws_connection_url: str,
         client_id: str,
-        client_secret: str
+        client_secret: str,
+        saver
             ) -> None:
         # Async Event Loop
         self.loop = asyncio.get_event_loop()
@@ -40,6 +72,7 @@ class main:
         self.websocket_client: websockets.WebSocketClientProtocol = None
         self.refresh_token: str = None
         self.refresh_token_expiry_time: int = None
+        self.saver = saver
 
         # Start Primary Coroutine
         self.loop.run_until_complete(
@@ -66,12 +99,13 @@ class main:
                 )
 
             # Subscribe to the specified WebSocket Channel
-            self.loop.create_task(
-                self.ws_operation(
-                    operation='subscribe',
-                    ws_channel='trades.BTC-PERPETUAL.raw'
+            for channel in channels:
+                self.loop.create_task(
+                    self.ws_operation(
+                        operation='subscribe',
+                        ws_channel=channel
+                        )
                     )
-                )
 
             while self.websocket_client.open:
                 message: bytes = await self.websocket_client.recv()
@@ -103,6 +137,10 @@ class main:
                     # Respond to Heartbeat Message
                     if message['method'] == 'heartbeat':
                         await self.heartbeat_response()
+                    elif message['method'] == 'subscription':
+                        if message['params']['channel'] in channels:
+                            self.saver.info(message['params']['data'])
+
 
             else:
                 logging.info('WebSocket connection has broken.')
@@ -239,8 +277,11 @@ if __name__ == "__main__":
     # DBT Client Secret
     client_secret: str = 'ENECvEKg11kH_o0gUIKQpbkE9U6-ztxiZFinRd8Adek'
 
+    saver = pklLogger('.', write_freq)
+
     main(
          ws_connection_url=ws_connection_url,
          client_id=client_id,
-         client_secret=client_secret
+         client_secret=client_secret,
+         saver=saver
          )
