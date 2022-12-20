@@ -32,7 +32,7 @@ write_freq = 'h'
 
 
 class pklLogger:
-    def __init__(self, outputpath, write_freq, buff_size = 10000):
+    def __init__(self, outputpath, write_freq, buff_size = 1000):
         self.out_path = outputpath
         self.buffer = []
         self.prev_ts = None
@@ -110,7 +110,7 @@ class main:
             while self.websocket_client.open:
                 message: bytes = await self.websocket_client.recv()
                 message: Dict = json.loads(message)
-                logging.info(message)
+                #logging.info(message)
 
                 if 'id' in list(message):
                     if message['id'] == 9929:
