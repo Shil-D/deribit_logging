@@ -26,7 +26,7 @@ import numpy as np
 # installed
 import websockets
 
-contract = 'ETH_USDC-PERPETUAL'
+contract = 'ETH_USDC'
 channels = [f'trades.{contract}.raw', f'book.{contract}.raw']
 write_freq = 'h'
 
@@ -39,7 +39,8 @@ class pklLogger:
         self.write_freq = write_freq
         self.buff_size = buff_size
 
-    def info(self, data):
+    def info(self, message):
+        data = message['data']
         tsfield = data[0]['timestamp'] if type(data) == list else data['timestamp']
         curts = np.datetime64(tsfield, 'ms')
         if not self.prev_ts:
@@ -48,10 +49,11 @@ class pklLogger:
         or (len(self.buffer) > self.buff_size):
             with gzip.open(Path(self.out_path) /str(self.prev_ts.astype(f'M8[{self.write_freq}]')).replace(':','.'), 'ab') as file:
                 msgpack.dump(self.buffer, file)
+                logging.info(f'Flushing {len(self.buffer)} items')
             self.buffer = []
         self.prev_ts = curts
-        self.buffer.append(data)
-        # print(len(self.buffer))
+        self.buffer.append(message)
+        
 
 
 class main:
@@ -111,6 +113,7 @@ class main:
                 message: bytes = await self.websocket_client.recv()
                 message: Dict = json.loads(message)
                 #logging.info(message)
+                #print(message)
 
                 if 'id' in list(message):
                     if message['id'] == 9929:
@@ -139,7 +142,7 @@ class main:
                         await self.heartbeat_response()
                     elif message['method'] == 'subscription':
                         if message['params']['channel'] in channels:
-                            self.saver.info(message['params']['data'])
+                            self.saver.info(message['params'])
 
 
             else:
@@ -268,14 +271,14 @@ if __name__ == "__main__":
         )
 
     # DBT LIVE WebSocket Connection URL
-    # ws_connection_url: str = 'wss://www.deribit.com/ws/api/v2'
+    ws_connection_url: str = 'wss://www.deribit.com/ws/api/v2'
     # DBT TEST WebSocket Connection URL
-    ws_connection_url: str = 'wss://test.deribit.com/ws/api/v2'
+    #ws_connection_url: str = 'wss://test.deribit.com/ws/api/v2'
 
     # DBT Client ID
-    client_id: str = 'qCUn2oDL'
+    client_id: str = 'PjRuI0ZZ'
     # DBT Client Secret
-    client_secret: str = 'ENECvEKg11kH_o0gUIKQpbkE9U6-ztxiZFinRd8Adek'
+    client_secret: str = 'gkKfaWDBbuUyUmndfw62V3JIPUzAI3TFSkPlRN0VIKg'
 
     saver = pklLogger('.', write_freq)
 
